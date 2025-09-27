@@ -49,6 +49,13 @@ class ChatStorageService {
   getMessageCount() {
     return this.getMessages().length;
   }
+
+  // Remove thinking message (the last message with isThinking flag)
+  removeThinkingMessage() {
+    const messages = this.getMessages();
+    const filteredMessages = messages.filter(msg => !msg.isThinking);
+    this.saveMessages(filteredMessages);
+  }
 }
 
 export default new ChatStorageService();

@@ -25,6 +25,17 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
       setLoading(true);
       setMessage(""); // Clear input immediately
 
+      // Add thinking message to chat
+      const thinkingMessage = {
+        type: "assistant",
+        content: "Thinking",
+        isThinking: true, // Special flag to identify thinking messages
+      };
+      chatStorage.addMessage(thinkingMessage);
+      window.dispatchEvent(
+        new CustomEvent("newMessage", { detail: thinkingMessage })
+      );
+
       try {
         const response = await axios.post(
           import.meta.env.VITE_BACKEND_URL + "/send",
@@ -32,6 +43,9 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
             userQuery: userMessage.content,
           }
         );
+
+        // Remove thinking message and add actual response
+        chatStorage.removeThinkingMessage();
 
         // Create assistant message from response
         const assistantMessage = {
@@ -55,6 +69,9 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
           content:
             "Sorry, I encountered an error while processing your request. Please try again.",
         };
+
+        // Remove thinking message and add error message
+        chatStorage.removeThinkingMessage();
 
         // Save error message to localStorage
         chatStorage.addMessage(errorMessage);
@@ -118,7 +135,7 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
                 }
                 // Shift+Enter allows new line (default behavior)
               }}
-              placeholder="Message RAG Assistant... (Enter to send, Shift+Enter for new line)"
+              placeholder="Message..."
               className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 pr-12 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               rows="1"
               style={{
@@ -141,10 +158,7 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
             title={loading ? "Thinking..." : "Send message"}
           >
             {loading ? (
-              <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                <span className="text-sm">Thinking...</span>
-              </div>
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
             ) : (
               <svg
                 className="w-5 h-5"

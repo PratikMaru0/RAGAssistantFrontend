@@ -48,6 +48,8 @@ const ChatMessages = ({ messages = [], onClearChat }) => {
 
   const renderMessage = (message, index) => {
     const isUser = message.type === "user";
+    const isThinking = message.isThinking;
+
     return (
       <div
         key={message.id || index}
@@ -56,9 +58,26 @@ const ChatMessages = ({ messages = [], onClearChat }) => {
         <div
           className={`text-white rounded-lg px-4 py-2 max-w-xs lg:max-w-md ${
             isUser ? "bg-blue-600" : "bg-gray-800"
-          }`}
+          } ${isThinking ? "opacity-70" : ""}`}
         >
-          {message.content}
+          {isThinking ? (
+            <div className="flex items-center space-x-2">
+              <span>{message.content}</span>
+              <div className="flex space-x-1">
+                <div className="w-1 h-1 bg-white rounded-full animate-bounce"></div>
+                <div
+                  className="w-1 h-1 bg-white rounded-full animate-bounce"
+                  style={{ animationDelay: "0.1s" }}
+                ></div>
+                <div
+                  className="w-1 h-1 bg-white rounded-full animate-bounce"
+                  style={{ animationDelay: "0.2s" }}
+                ></div>
+              </div>
+            </div>
+          ) : (
+            message.content
+          )}
         </div>
       </div>
     );
