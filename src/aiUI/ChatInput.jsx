@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import chatStorage from "../services/chatStorage";
+import axios from "axios";
 
 const ChatInput = ({ onSendMessage, onClearChat }) => {
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (message.trim()) {
       const userMessage = {
@@ -15,11 +17,17 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
       // Save to localStorage
       chatStorage.addMessage(userMessage);
 
-      // Notify parent component
-      if (onSendMessage) {
-        onSendMessage(userMessage);
-      }
+      setLoading(true);
 
+      const response = await axios.post(
+        import.meta.env.VITE_BACKEND_URL + "/send",
+        {
+          userQuery: message.trim(),
+        }
+      );
+
+      console.log("Response: ", response.data);
+      setLoading(false);
       setMessage("");
     }
   };
