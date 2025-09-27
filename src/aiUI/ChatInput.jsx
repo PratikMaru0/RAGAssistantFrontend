@@ -14,21 +14,58 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
         content: message.trim(),
       };
 
-      // Save to localStorage
+      // Save user message to localStorage and trigger UI update
       chatStorage.addMessage(userMessage);
 
-      setLoading(true);
-
-      const response = await axios.post(
-        import.meta.env.VITE_BACKEND_URL + "/send",
-        {
-          userQuery: message.trim(),
-        }
+      // Dispatch custom event to notify ChatMessages component
+      window.dispatchEvent(
+        new CustomEvent("newMessage", { detail: userMessage })
       );
 
-      console.log("Response: ", response.data);
-      setLoading(false);
-      setMessage("");
+      setLoading(true);
+      setMessage(""); // Clear input immediately
+
+      try {
+        const response = await axios.post(
+          import.meta.env.VITE_BACKEND_URL + "/send",
+          {
+            userQuery: userMessage.content,
+          }
+        );
+
+        // Create assistant message from response
+        const assistantMessage = {
+          type: "assistant",
+          content: response.data,
+        };
+
+        // Save assistant message to localStorage
+        chatStorage.addMessage(assistantMessage);
+
+        // Dispatch custom event to notify ChatMessages component
+        window.dispatchEvent(
+          new CustomEvent("newMessage", { detail: assistantMessage })
+        );
+      } catch (error) {
+        console.error("Error sending message:", error);
+
+        // Create error message
+        const errorMessage = {
+          type: "assistant",
+          content:
+            "Sorry, I encountered an error while processing your request. Please try again.",
+        };
+
+        // Save error message to localStorage
+        chatStorage.addMessage(errorMessage);
+
+        // Dispatch custom event to notify ChatMessages component
+        window.dispatchEvent(
+          new CustomEvent("newMessage", { detail: errorMessage })
+        );
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -99,23 +136,30 @@ const ChatInput = ({ onSendMessage, onClearChat }) => {
           {/* Send Button */}
           <button
             type="submit"
-            disabled={!message.trim()}
+            disabled={!message.trim() || loading}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg px-4 py-3 transition-colors flex items-center justify-center min-w-[48px] h-[48px]"
-            title="Send message"
+            title={loading ? "Thinking..." : "Send message"}
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-              />
-            </svg>
+            {loading ? (
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span className="text-sm">Thinking...</span>
+              </div>
+            ) : (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                />
+              </svg>
+            )}
           </button>
         </form>
       </div>

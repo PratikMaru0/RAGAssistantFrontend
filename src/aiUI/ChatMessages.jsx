@@ -15,6 +15,18 @@ const ChatMessages = ({ messages = [], onClearChat }) => {
     setStoredMessages(savedMessages);
   }, []);
 
+  // Listen for new messages
+  useEffect(() => {
+    const handleNewMessage = () => {
+      // Reload all messages from localStorage to avoid duplicates
+      const savedMessages = chatStorage.getMessages();
+      setStoredMessages(savedMessages);
+    };
+
+    window.addEventListener("newMessage", handleNewMessage);
+    return () => window.removeEventListener("newMessage", handleNewMessage);
+  }, []);
+
   // Listen for clear chat events
   useEffect(() => {
     if (onClearChat) {
