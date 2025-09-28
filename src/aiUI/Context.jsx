@@ -5,6 +5,7 @@ const Context = () => {
   const [pdfs, setPdfs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [embeddingRunning, setEmbeddingRunning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -62,6 +63,8 @@ const Context = () => {
         console.log("Uploaded", data);
         // Refresh list after successful upload
         await loadPDFs();
+        // Trigger embeddings after upload
+        await runCreateEmbeddings();
       }
     } catch (e) {
       console.error("Network/upload error", e);
@@ -112,6 +115,8 @@ const Context = () => {
         );
 
         if (resp.status === 204) {
+          // Trigger embeddings after delete
+          await runCreateEmbeddings();
           return; // already removed from UI
         }
 
@@ -123,12 +128,35 @@ const Context = () => {
           setPdfs(previous);
           return;
         }
+        // Trigger embeddings after delete success
+        await runCreateEmbeddings();
       } catch (error) {
         console.error("Error deleting PDF:", error);
         alert("Error deleting file. Please try again.");
         // Revert UI on error
         await loadPDFs();
       }
+    }
+  };
+
+  // Calls backend to build embeddings and shows a loading bar + alerts with response text
+  const runCreateEmbeddings = async () => {
+    try {
+      setEmbeddingRunning(true);
+      const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/createVectorEmbeddings`, {
+        method: "POST",
+      });
+      const text = await resp.text();
+      if (!resp.ok) {
+        alert(text || "Failed to create vector embeddings");
+        return;
+      }
+      alert(text || "Vector embeddings created successfully");
+    } catch (e) {
+      console.error("Embedding error", e);
+      alert("Network error while creating embeddings");
+    } finally {
+      setEmbeddingRunning(false);
     }
   };
 
@@ -159,6 +187,14 @@ const Context = () => {
             </p>
 
             <div className="space-y-4">
+              {embeddingRunning && (
+                <div className="bg-gray-700 rounded-lg p-4">
+                  <p className="text-white text-sm mb-2">Creating vector embeddings...</p>
+                  <div className="w-full bg-gray-600 h-2 rounded overflow-hidden">
+                    <div className="bg-green-500 h-2 w-1/3 animate-pulse"></div>
+                  </div>
+                </div>
+              )}
               {/* Uploaded Documents */}
               <div className="bg-gray-700 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-white mb-4">
