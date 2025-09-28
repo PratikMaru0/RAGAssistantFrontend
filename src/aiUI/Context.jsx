@@ -16,7 +16,10 @@ const Context = () => {
   const loadPDFs = async () => {
     try {
       setLoading(true);
-      const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/files`);
+      const resp = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/files?t=${Date.now()}`,
+        { cache: "no-store" }
+      );
       const data = await resp.json();
       if (!resp.ok) {
         console.error("List files error:", data);
@@ -50,7 +53,7 @@ const Context = () => {
       const form = new FormData();
       form.append("file", pdfFiles[0]);
 
-      const resp = await fetch(import.meta.env.VITE_BACKEND_URL + "/upload", {
+      const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, {
         method: "POST",
         body: form,
       });
@@ -61,10 +64,10 @@ const Context = () => {
         alert(data?.error || "Upload failed");
       } else {
         console.log("Uploaded", data);
-        // Refresh list after successful upload
+        // Reload list once
         await loadPDFs();
-        // Trigger embeddings after upload
-        await runCreateEmbeddings();
+        // Run embeddings in background
+        runCreateEmbeddings();
       }
     } catch (e) {
       console.error("Network/upload error", e);
@@ -101,51 +104,49 @@ const Context = () => {
   };
 
   const handleDeletePDF = async (id) => {
-    if (window.confirm("Are you sure you want to delete this PDF?")) {
-      try {
-        // Optimistic UI: remove locally first
-        const previous = pdfs;
-        setPdfs((curr) => curr.filter((p) => p.id !== id));
+    if (!window.confirm("Are you sure you want to delete this PDF?")) return;
 
-        const resp = await fetch(
-          `${import.meta.env.VITE_BACKEND_URL}/files/${id}`,
-          {
-            method: "DELETE",
-          }
-        );
+    // Optimistic UI update
+    const previous = pdfs;
+    setPdfs((curr) => curr.filter((p) => p.id !== id));
 
-        if (resp.status === 204) {
-          // Trigger embeddings after delete
-          await runCreateEmbeddings();
-          return; // already removed from UI
-        }
-
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
-          console.error("Delete error:", data);
-          alert(data?.error || "Failed to delete file");
-          // Revert UI on failure
-          setPdfs(previous);
-          return;
-        }
-        // Trigger embeddings after delete success
-        await runCreateEmbeddings();
-      } catch (error) {
-        console.error("Error deleting PDF:", error);
-        alert("Error deleting file. Please try again.");
-        // Revert UI on error
-        await loadPDFs();
+    try {
+      const resp = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/files/${id}`,
+        { method: "DELETE" }
+      );
+      if (resp.status === 204) {
+        runCreateEmbeddings(); // background
+        return;
       }
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        console.error("Delete error:", data);
+        alert(data?.error || "Failed to delete file");
+        setPdfs(previous); // rollback
+      } else {
+        runCreateEmbeddings();
+      }
+    } catch (error) {
+      console.error("Error deleting PDF:", error);
+      alert("Error deleting file. Please try again.");
+      setPdfs(previous); // rollback
     }
   };
 
-  // Calls backend to build embeddings and shows a loading bar + alerts with response text
+  // Calls backend to build embeddings
   const runCreateEmbeddings = async () => {
     try {
       setEmbeddingRunning(true);
-      const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/createVectorEmbeddings`, {
-        method: "POST",
-      });
+      const deleteResponse = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/deleteContext`,
+        { method: "DELETE" }
+      );
+      console.log(deleteResponse);
+      const resp = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/createVectorEmbeddings`,
+        { method: "POST" }
+      );
       const text = await resp.text();
       if (!resp.ok) {
         alert(text || "Failed to create vector embeddings");
@@ -164,7 +165,7 @@ const Context = () => {
     return (bytes / 1024 / 1024).toFixed(2) + " MB";
   };
 
-  const handleViewPDF = async (pdfId) => {
+  const handleViewPDF = (pdfId) => {
     const pdf = pdfs.find((p) => p.id === pdfId);
     if (pdf?.url) {
       window.open(pdf.url, "_blank");
@@ -189,12 +190,15 @@ const Context = () => {
             <div className="space-y-4">
               {embeddingRunning && (
                 <div className="bg-gray-700 rounded-lg p-4">
-                  <p className="text-white text-sm mb-2">Creating vector embeddings...</p>
+                  <p className="text-white text-sm mb-2">
+                    Creating vector embeddings...
+                  </p>
                   <div className="w-full bg-gray-600 h-2 rounded overflow-hidden">
                     <div className="bg-green-500 h-2 w-1/3 animate-pulse"></div>
                   </div>
                 </div>
               )}
+
               {/* Uploaded Documents */}
               <div className="bg-gray-700 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-white mb-4">
