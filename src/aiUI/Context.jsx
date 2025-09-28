@@ -13,7 +13,24 @@ const Context = () => {
   }, []);
 
   const loadPDFs = async () => {
-    console.log("Loaded");
+    try {
+      setLoading(true);
+      const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/files`);
+      const data = await resp.json();
+      if (!resp.ok) {
+        console.error("List files error:", data);
+        alert(data?.error || "Failed to load documents");
+        setPdfs([]);
+      } else {
+        setPdfs(Array.isArray(data.files) ? data.files : []);
+      }
+    } catch (e) {
+      console.error("Network error loading files", e);
+      alert("Network error while loading documents");
+      setPdfs([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFileUpload = async (files) => {
@@ -43,7 +60,8 @@ const Context = () => {
         alert(data?.error || "Upload failed");
       } else {
         console.log("Uploaded", data);
-        // Optionally refresh list here when you implement loadPDFs()
+        // Refresh list after successful upload
+        await loadPDFs();
       }
     } catch (e) {
       console.error("Network/upload error", e);
@@ -96,15 +114,11 @@ const Context = () => {
   };
 
   const handleViewPDF = async (pdfId) => {
-    try {
-      const pdfData = await pdfStorage.getPDF(pdfId);
-      if (pdfData) {
-        const pdfUrl = pdfStorage.createPDFBlobURL(pdfData);
-        window.open(pdfUrl, "_blank");
-      }
-    } catch (error) {
-      console.error("Error opening PDF:", error);
-      alert("Error opening PDF. Please try again.");
+    const pdf = pdfs.find((p) => p.id === pdfId);
+    if (pdf?.url) {
+      window.open(pdf.url, "_blank");
+    } else {
+      alert("Unable to open file URL.");
     }
   };
 
