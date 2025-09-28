@@ -27,8 +27,30 @@ const Context = () => {
     }
 
     setUploading(true);
-    console.log("Uploaded");
-    setUploading(false);
+
+    try {
+      const form = new FormData();
+      form.append("file", pdfFiles[0]);
+
+      const resp = await fetch(import.meta.env.VITE_BACKEND_URL + "/upload", {
+        method: "POST",
+        body: form,
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) {
+        console.error("Upload error:", data);
+        alert(data?.error || "Upload failed");
+      } else {
+        console.log("Uploaded", data);
+        // Optionally refresh list here when you implement loadPDFs()
+      }
+    } catch (e) {
+      console.error("Network/upload error", e);
+      alert("Network error while uploading");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleFileInputChange = (e) => {
