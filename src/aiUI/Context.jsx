@@ -100,11 +100,34 @@ const Context = () => {
   const handleDeletePDF = async (id) => {
     if (window.confirm("Are you sure you want to delete this PDF?")) {
       try {
-        await pdfStorage.deletePDF(id);
-        await loadPDFs();
+        // Optimistic UI: remove locally first
+        const previous = pdfs;
+        setPdfs((curr) => curr.filter((p) => p.id !== id));
+
+        const resp = await fetch(
+          `${import.meta.env.VITE_BACKEND_URL}/files/${id}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+        if (resp.status === 204) {
+          return; // already removed from UI
+        }
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          console.error("Delete error:", data);
+          alert(data?.error || "Failed to delete file");
+          // Revert UI on failure
+          setPdfs(previous);
+          return;
+        }
       } catch (error) {
         console.error("Error deleting PDF:", error);
         alert("Error deleting file. Please try again.");
+        // Revert UI on error
+        await loadPDFs();
       }
     }
   };
