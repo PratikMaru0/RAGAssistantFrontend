@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import Header from "./Header";
 
 const Context = () => {
+  // Renamed states for better clarity (e.g., loading -> isLoading)
   const [pdfs, setPdfs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [embeddingRunning, setEmbeddingRunning] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isEmbeddingRunning, setIsEmbeddingRunning] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -15,7 +16,7 @@ const Context = () => {
 
   const loadPDFs = async () => {
     try {
-      setLoading(true);
+      setIsLoading(true);
       const resp = await fetch(
         `${import.meta.env.VITE_BACKEND_URL}/files?t=${Date.now()}`,
         { cache: "no-store" }
@@ -33,11 +34,20 @@ const Context = () => {
       alert("Network error while loading documents");
       setPdfs([]);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
+  /**
+   * FIX: Rewritten to handle multiple files sequentially and provide a summary.
+   */
   const handleFileUpload = async (files) => {
+    // FIX: Prevent new uploads while another operation is in progress.
+    if (isUploading || isEmbeddingRunning) {
+      alert("Please wait for the current operation to finish.");
+      return;
+    }
+
     const pdfFiles = Array.from(files).filter(
       (file) => file.type === "application/pdf"
     );
@@ -47,46 +57,69 @@ const Context = () => {
       return;
     }
 
-    setUploading(true);
+    setIsUploading(true);
 
-    try {
-      const form = new FormData();
-      form.append("file", pdfFiles[0]);
+    const successfulUploads = [];
+    const failedUploads = [];
 
-      const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, {
-        method: "POST",
-        body: form,
-      });
+    // Process files one by one to avoid overwhelming the server
+    for (const file of pdfFiles) {
+      try {
+        const form = new FormData();
+        form.append("file", file);
 
-      const data = await resp.json();
-      if (!resp.ok) {
-        console.error("Upload error:", data);
-        alert(data?.error || "Upload failed");
-      } else {
-        console.log("Uploaded", data);
-        // Reload list once
-        await loadPDFs();
-        // Run embeddings in background
-        runCreateEmbeddings();
+        const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, {
+          method: "POST",
+          body: form,
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data?.error || `Failed to upload ${file.name}`);
+        }
+        successfulUploads.push(file.name);
+      } catch (e) {
+        console.error(`Upload error for ${file.name}:`, e);
+        failedUploads.push({ name: file.name, reason: e.message });
       }
-    } catch (e) {
-      console.error("Network/upload error", e);
-      alert("Network error while uploading");
-    } finally {
-      setUploading(false);
+    }
+
+    setIsUploading(false);
+
+    // FIX: Provide a clear summary of the upload results.
+    let summaryMessage = "";
+    if (successfulUploads.length > 0) {
+      summaryMessage += `${successfulUploads.length} file(s) uploaded successfully.`;
+    }
+    if (failedUploads.length > 0) {
+      const failures = failedUploads
+        .map((f) => `- ${f.name} (${f.reason})`)
+        .join("\n");
+      summaryMessage += `\n${failedUploads.length} file(s) failed to upload:\n${failures}`;
+    }
+    if (summaryMessage) {
+      alert(summaryMessage.trim());
+    }
+
+    // If at least one file was uploaded successfully, refresh the list and update embeddings.
+    if (successfulUploads.length > 0) {
+      await loadPDFs();
+      runCreateEmbeddings();
     }
   };
 
   const handleFileInputChange = (e) => {
     const files = e.target.files;
-    if (files.length > 0) {
+    if (files && files.length > 0) {
       handleFileUpload(files);
+      // Reset file input to allow re-uploading the same file
+      e.target.value = "";
     }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    setDragOver(false);
+    setIsDragOver(false);
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       handleFileUpload(files);
@@ -95,80 +128,92 @@ const Context = () => {
 
   const handleDragOver = (e) => {
     e.preventDefault();
-    setDragOver(true);
+    setIsDragOver(true);
   };
 
   const handleDragLeave = (e) => {
     e.preventDefault();
-    setDragOver(false);
+    setIsDragOver(false);
   };
 
+  /**
+   * FIX: Simplified logic to prevent double-calling runCreateEmbeddings and improved error handling.
+   */
   const handleDeletePDF = async (id) => {
     if (!window.confirm("Are you sure you want to delete this PDF?")) return;
 
-    // Optimistic UI update
-    const previous = pdfs;
-    setPdfs((curr) => curr.filter((p) => p.id !== id));
+    const previousPdfs = pdfs;
+    setPdfs((currentPdfs) => currentPdfs.filter((p) => p.id !== id));
 
     try {
       const resp = await fetch(
         `${import.meta.env.VITE_BACKEND_URL}/files/${id}`,
         { method: "DELETE" }
       );
-      if (resp.status === 204) {
-        runCreateEmbeddings(); // background
-        return;
-      }
-      const data = await resp.json().catch(() => ({}));
+
       if (!resp.ok) {
-        console.error("Delete error:", data);
-        alert(data?.error || "Failed to delete file");
-        setPdfs(previous); // rollback
+        const data = await resp.json().catch(() => ({}));
+        const errorMessage =
+          data?.error || resp.statusText || "Failed to delete file";
+        console.error("Delete error:", errorMessage);
+        alert(errorMessage);
+        setPdfs(previousPdfs); // Rollback on failure
       } else {
-        runCreateEmbeddings();
+        runCreateEmbeddings(); // Success
       }
     } catch (error) {
-      console.error("Error deleting PDF:", error);
-      alert("Error deleting file. Please try again.");
-      setPdfs(previous); // rollback
+      console.error("Network error deleting PDF:", error);
+      alert("Network error while deleting file. Please try again.");
+      setPdfs(previousPdfs); // Rollback on network error
     }
   };
 
-  // Calls backend to build embeddings
+  /**
+   * FIX: Made more robust. It now checks if context deletion was successful before proceeding.
+   */
   const runCreateEmbeddings = async () => {
+    setIsEmbeddingRunning(true);
     try {
-      setEmbeddingRunning(true);
       const deleteResponse = await fetch(
         `${import.meta.env.VITE_BACKEND_URL}/deleteContext`,
         { method: "DELETE" }
       );
-      console.log(deleteResponse);
-      const resp = await fetch(
+
+      if (!deleteResponse.ok) {
+        const errorText = await deleteResponse
+          .text()
+          .catch(() => "Failed to clear old context.");
+        throw new Error(errorText);
+      }
+
+      const createResponse = await fetch(
         `${import.meta.env.VITE_BACKEND_URL}/createVectorEmbeddings`,
         { method: "POST" }
       );
-      const text = await resp.text();
-      if (!resp.ok) {
-        alert(text || "Failed to create vector embeddings");
-        return;
+
+      const responseText = await createResponse.text();
+      if (!createResponse.ok) {
+        throw new Error(responseText || "Failed to create vector embeddings");
       }
-      alert(text || "Vector embeddings created successfully");
+
+      alert(responseText || "Context has been updated successfully.");
     } catch (e) {
-      console.error("Embedding error", e);
-      alert("Network error while creating embeddings");
+      console.error("Embedding error:", e);
+      alert(`Error updating context: ${e.message}`);
     } finally {
-      setEmbeddingRunning(false);
+      setIsEmbeddingRunning(false);
     }
   };
 
   const formatFileSize = (bytes) => {
+    if (!bytes || bytes === 0) return "0 MB";
     return (bytes / 1024 / 1024).toFixed(2) + " MB";
   };
 
   const handleViewPDF = (pdfId) => {
     const pdf = pdfs.find((p) => p.id === pdfId);
     if (pdf?.url) {
-      window.open(pdf.url, "_blank");
+      window.open(pdf.url, "_blank", "noopener,noreferrer");
     } else {
       alert("Unable to open file URL.");
     }
@@ -188,13 +233,13 @@ const Context = () => {
             </p>
 
             <div className="space-y-4">
-              {embeddingRunning && (
+              {isEmbeddingRunning && (
                 <div className="bg-gray-700 rounded-lg p-4">
                   <p className="text-white text-sm mb-2">
                     Creating vector embeddings...
                   </p>
                   <div className="w-full bg-gray-600 h-2 rounded overflow-hidden">
-                    <div className="bg-green-500 h-2 w-1/3 animate-pulse"></div>
+                    <div className="bg-green-500 h-2 w-full animate-pulse"></div>
                   </div>
                 </div>
               )}
@@ -204,7 +249,7 @@ const Context = () => {
                 <h3 className="text-lg font-semibold text-white mb-4">
                   Uploaded Documents
                 </h3>
-                {loading ? (
+                {isLoading ? (
                   <div className="text-center py-4">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
                     <p className="text-gray-400 mt-2">Loading documents...</p>
@@ -220,10 +265,10 @@ const Context = () => {
                         key={pdf.id}
                         className="flex items-center justify-between bg-gray-600 rounded p-3"
                       >
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           <button
                             onClick={() => handleViewPDF(pdf.id)}
-                            className="text-blue-400 hover:text-blue-300 text-left hover:underline"
+                            className="text-blue-400 hover:text-blue-300 text-left hover:underline truncate"
                           >
                             {pdf.name}
                           </button>
@@ -234,7 +279,8 @@ const Context = () => {
                         </div>
                         <button
                           onClick={() => handleDeletePDF(pdf.id)}
-                          className="text-red-400 hover:text-red-300 text-sm ml-4"
+                          disabled={isEmbeddingRunning || isUploading}
+                          className="text-red-400 hover:text-red-300 disabled:text-gray-500 disabled:cursor-not-allowed text-sm ml-4 flex-shrink-0"
                         >
                           Remove
                         </button>
@@ -251,7 +297,7 @@ const Context = () => {
                 </h3>
                 <div
                   className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                    dragOver
+                    isDragOver
                       ? "border-blue-500 bg-blue-900 bg-opacity-20"
                       : "border-gray-500"
                   }`}
@@ -269,15 +315,16 @@ const Context = () => {
                     accept=".pdf,application/pdf"
                     onChange={handleFileInputChange}
                     className="hidden"
+                    disabled={isUploading || isEmbeddingRunning}
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
+                    disabled={isUploading || isEmbeddingRunning}
                     className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition-colors"
                   >
-                    {uploading ? "Uploading..." : "Choose PDF Files"}
+                    {isUploading ? "Uploading..." : "Choose PDF Files"}
                   </button>
-                  {uploading && (
+                  {isUploading && (
                     <div className="mt-4">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mx-auto"></div>
                     </div>
