@@ -263,24 +263,24 @@ const Context = () => {
                     {pdfs.map((pdf) => (
                       <div
                         key={pdf.id}
-                        className="flex items-center justify-between bg-gray-600 rounded p-3"
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-gray-600 rounded p-3"
                       >
                         <div className="flex-1 min-w-0">
                           <button
                             onClick={() => handleViewPDF(pdf.id)}
-                            className="text-blue-400 hover:text-blue-300 text-left hover:underline truncate"
+                            className="text-blue-400 hover:text-blue-300 text-left hover:underline truncate whitespace-normal sm:whitespace-nowrap break-words"
+                            title={pdf.name}
                           >
                             {pdf.name}
                           </button>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {formatFileSize(pdf.size)} •{" "}
-                            {new Date(pdf.uploadDate).toLocaleDateString()}
+                          <p className="text-xs text-gray-400 mt-1 truncate">
+                            {formatFileSize(pdf.size)} • {new Date(pdf.uploadDate).toLocaleDateString()}
                           </p>
                         </div>
                         <button
                           onClick={() => handleDeletePDF(pdf.id)}
                           disabled={isEmbeddingRunning || isUploading}
-                          className="text-red-400 hover:text-red-300 disabled:text-gray-500 disabled:cursor-not-allowed text-sm ml-4 flex-shrink-0"
+                          className="text-red-400 hover:text-red-300 disabled:text-gray-500 disabled:cursor-not-allowed text-sm sm:ml-4 self-end sm:self-auto w-auto"
                         >
                           Remove
                         </button>
